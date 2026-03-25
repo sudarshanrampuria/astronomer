@@ -1,20 +1,14 @@
-#################################
-#                               #
-#  ElasticSearch Configuration  #
-#                               #
-#################################
 nodeSelector: {}
 affinity: {}
 tolerations: []
-
 images:
   es:
     repository: quay.io/astronomer/ap-elasticsearch
     tag: 8.19.12
     pullPolicy: IfNotPresent
   init:
-    repository: quay.io/astronomer/ap-base # needs root permissions for sysctl changes
-    tag: 2026.03.18
+    repository: quay.io/astronomer/ap-base
+    tag: 2026.03.24
     pullPolicy: IfNotPresent
   curator:
     repository: quay.io/astronomer/ap-curator
@@ -28,314 +22,164 @@ images:
     repository: quay.io/astronomer/ap-nginx-es
     tag: 1.29.6
     pullPolicy: IfNotPresent
-
 common:
   podAnnotations: {}
   serviceType: ClusterIP
   protocol: http
-
   serviceAccount:
-    # Specifies whether a ServiceAccount should be created
     create: true
-    # Annotations to add to the service account
     annotations: {}
-    # The name of the ServiceAccount to use.
-    # If not set and create is true, a name is generated using the fullname template
-    name: ~
+    name: null
     sccEnabled: true
-
   env:
-    CLUSTER_NAME: "astronomer"
-    HTTP_CORS_ENABLE: "true"
-    HTTP_CORS_ALLOW_ORIGIN: "*"
-    NUMBER_OF_MASTERS: "2"
-    MAX_LOCAL_STORAGE_NODES: "1"
-    SHARD_ALLOCATION_AWARENESS: ""
-    SHARD_ALLOCATION_AWARENESS_ATTR: ""
-
-    # Uncomment this if you get the "No up-and-running site-local (private)
-    # addresses" error.
-    # NETWORK_HOST: "_eth0_"
-
-  # If enabled, then the data and master nodes will be StatefulSets with
-  # associated persistent volume claims.
+    CLUSTER_NAME: astronomer
+    HTTP_CORS_ENABLE: 'true'
+    HTTP_CORS_ALLOW_ORIGIN: '*'
+    NUMBER_OF_MASTERS: '2'
+    MAX_LOCAL_STORAGE_NODES: '1'
+    SHARD_ALLOCATION_AWARENESS: ''
+    SHARD_ALLOCATION_AWARENESS_ATTR: ''
   persistence:
     enabled: true
     annotations: {}
-    persistentVolumeClaimRetentionPolicy: ~
-
-    # The PVC storage class that backs the persistent volume claims. On AWS
-    # "gp2" would be appropriate.
-    # storageClassName: "standard"
-
+    persistentVolumeClaimRetentionPolicy: null
   ports:
     http: 9200
     readiness: 9399
     transport: 9300
-
-# Client/ingest nodes can execute pre-processing pipelines, composed of
-# one or more ingest processors. Depending on the type of operations performed
-# by the ingest processors and the required resources, it may make sense to
-# have dedicated ingest nodes, that will only perform this specific task.
 client:
   podAnnotations: {}
-  # It isn't common to need more than 2 client nodes.
   replicas: 2
-  # This only applies when replicas > 3
   maxUnavailable: 25%
-  antiAffinity: "soft"
-
+  antiAffinity: soft
   initResources: {}
-
-  # The amount of RAM allocated to the JVM heap. This should be set to the
-  # same value as client.resources.requests.memory, or you may see
-  # OutOfMemoryErrors on startup.
   heapMemory: 256m
-
   resources:
     requests:
       memory: 256Mi
-
   livenessProbe: {}
-    # httpGet:
-    #   path: /_cluster/health?local=true
-    #   port: {{ .Values.common.ports.http }}
-    # initialDelaySeconds: 90
   readinessProbe: {}
-    # httpGet:
-    #   # local: If true, the request retrieves information from the local node only.
-    #   # Defaults to false, which means information is retrieved from the master node.
-    #   path: /_cluster/health?local=true
-    #   port: {{ .Values.common.ports.http }}
-    # initialDelaySeconds: 5
-
   env:
-    NODE_DATA: "false"
-    NODE_MASTER: "false"
-    NODE_INGEST: "true"
-    HTTP_ENABLE: "true"
-
+    NODE_DATA: 'false'
+    NODE_MASTER: 'false'
+    NODE_INGEST: 'true'
+    HTTP_ENABLE: 'true'
   roles:
-    - ingest
-    - ml
-    - remote_cluster_client
-
-# Data nodes hold the shards that contain the documents you have indexed. Data
-# nodes handle data related operations like CRUD, search, and aggregations.
-# These operations are I/O-, memory-, and CPU-intensive. It is important to
-# monitor these resources and to add more data nodes if they are overloaded.
-#
-# The main benefit of having dedicated data nodes is the separation of the
-# master and data roles.
+  - ingest
+  - ml
+  - remote_cluster_client
 data:
   podAnnotations: {}
-  # This count will depend on your data and computation needs.
   replicas: 2
-  antiAffinity: "soft"
-
+  antiAffinity: soft
   initResources: {}
-
-  # The amount of RAM allocated to the JVM heap. This should be set to the
-  # same value as data.resources.requests.memory, or you may see
-  # OutOfMemoryErrors on startup.
   heapMemory: 256m
-
   resources:
     requests:
       memory: 256Mi
-
   livenessProbe: {}
-    # tcpSocket:
-    #   port: {{ .Values.common.ports.transport }}
-    # initialDelaySeconds: 20
-    # periodSeconds: 10
   readinessProbe: {}
-
   env:
-    NODE_DATA: "true"
-    NODE_MASTER: "false"
-    NODE_INGEST: "false"
-    HTTP_ENABLE: "false"
-
+    NODE_DATA: 'true'
+    NODE_MASTER: 'false'
+    NODE_INGEST: 'false'
+    HTTP_ENABLE: 'false'
   roles:
-    - data
-    - data_cold
-    - data_content
-    - data_frozen
-    - data_hot
-    - data_warm
-    - ml
-    - remote_cluster_client
-    - transform
-
-  # Determines the properties of the persistent volume claim associated with a
-  # data node StatefulSet that is created when the common.persistence.enabled
-  # attribute is true.
+  - data
+  - data_cold
+  - data_content
+  - data_frozen
+  - data_hot
+  - data_warm
+  - ml
+  - remote_cluster_client
+  - transform
   persistence:
-    # This is a default value, and will not be sufficient in a production
-    # system. You'll probably want to increase it.
     size: 50Gi
-
-# The master node is responsible for lightweight cluster-wide actions such as
-# creating or deleting an index, tracking which nodes are part of the
-# cluster, and deciding which shards to allocate to which nodes. It is
-# important for cluster health to have a stable master node.
 master:
   podAnnotations: {}
-  # Master replica count should be (#clients / 2) + 1, and generally at least 3.
   replicas: 3
-  antiAffinity: "soft"
-
+  antiAffinity: soft
   initResources: {}
-
-  # The amount of RAM allocated to the JVM heap. This should be set to the
-  # same value as master.resources.requests.memory, or you may see
-  # OutOfMemoryErrors on startup.
   heapMemory: 256m
-
   resources:
     requests:
       memory: 256Mi
-
   readinessProbe: {}
-    # httpGet:
-    #   # local: If true, the request retrieves information from the local node only.
-    #   # Defaults to false, which means information is retrieved from the master node.
-    #   path: /_cluster/health?local=true
-    #   port: {{ .Values.common.ports.http }}
-    # initialDelaySeconds: 5
   livenessProbe: {}
-    # tcpSocket:
-    #   port: {{ .Values.common.ports.transport }}
-
   env:
-    NODE_DATA: "false"
-    NODE_MASTER: "true"
-    NODE_INGEST: "false"
-    HTTP_ENABLE: "false"
-
+    NODE_DATA: 'false'
+    NODE_MASTER: 'true'
+    NODE_INGEST: 'false'
+    HTTP_ENABLE: 'false'
   roles:
-    - master
-    - ml
-    - remote_cluster_client
-
-  # Determines the properties of the persistent volume claim associated with a
-  # data node StatefulSet that is created when the common.stateful.enabled
-  # attribute is true.
+  - master
+  - ml
+  - remote_cluster_client
   persistence:
-    # This is a default value, and will not be sufficient in a production
-    # system. You'll probably want to increase it.
     size: 20Gi
-
 curator:
   podAnnotations: {}
   enabled: true
-  schedule: "0 1 * * *"
+  schedule: 0 1 * * *
   securityContext:
     runAsNonRoot: true
   resources: {}
-
-  # Allows modification of the default age-based filter. If you require more
-  # sophisticated filtering, modify the action file specified in
-  # templates/es-curator-config.yaml.
   age:
-    timestring: "%Y.%m.%d"
-    unit: "days"
+    timestring: '%Y.%m.%d'
+    unit: days
     unit_count: 10
-
   livenessProbe: {}
   readinessProbe: {}
-
 exporter:
   podAnnotations: {}
-  # Number of exporter instances
   replicas: 1
-
-  # Restart policy for all containers
   restartPolicy: Always
-
   podSecurityContext: {}
   securityContext:
     capabilities:
       drop:
       - ALL
-
   resources: {}
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-
   livenessProbe: {}
-    # httpGet:
-    #   path: /health
-    #   port: http
-    # initialDelaySeconds: 30
-    # timeoutSeconds: 10
   readinessProbe: {}
-    # httpGet:
-    #   path: /health
-    #   port: http
-    # initialDelaySeconds: 10
-    # timeoutSeconds: 10
-
   service:
     type: ClusterIP
     httpPort: 9108
     annotations: {}
-
   es:
-    # Address (host and port) of the Elasticsearch node we should connect to.
-    # uri: localhost:9200
-
-    # Timeout for trying to get stats from Elasticsearch. (ex: 20s)
     timeout: 30s
-
   web:
-    # Path under which to expose metrics.
     path: /metrics
-
-# NGINX Elasticsearch values
 nginx:
   replicas: 1
   podAnnotations: {}
-  fullnameOverride: ~
-  ingressClass: ~
+  fullnameOverride: null
+  ingressClass: null
   resources: {}
   securityContext:
     runAsNonRoot: true
-  maxBodySize: "100M"
-
+  maxBodySize: 100M
   authCache:
     enabled: true
-    # Cache storage settings (path is hardcoded to /tmp/nginx-auth-cache for readOnlyRootFilesystem compatibility)
-    levels: "1:2"
-    keysZone: "auth_cache:10m"
-    maxSize: "100m"
-    inactive: "5m"
-    # Cache TTL settings
-    validSuccess: "5m"      # Cache successful auth (200) responses
-    validFailure: "1m"      # Cache auth failures (401, 403) responses
-
-# sysctl init container
-# Warning: sysctl changes affect the kernel, and thus, all containers running on the same node.
+    levels: '1:2'
+    keysZone: auth_cache:10m
+    maxSize: 100m
+    inactive: 5m
+    validSuccess: 5m
+    validFailure: 1m
 sysctlInitContainer:
   enabled: true
   sysctlVmMaxMapCount: 262144
   livenessProbe: {}
   readinessProbe: {}
-
 podSecurityContext:
   fsGroup: 1000
-
 securityContext:
   capabilities:
     drop:
-      - ALL
+    - ALL
   runAsNonRoot: true
   runAsUser: 1000
-
 ingress:
   annotation: {}
